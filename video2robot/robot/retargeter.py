@@ -69,10 +69,11 @@ class RobotRetargeter:
 
         try:
             from general_motion_retargeting import GeneralMotionRetargeting
-            from general_motion_retargeting.utils.smpl import load_smplx_file, get_smplx_data_offline_fast
+            from general_motion_retargeting.utils.smpl import get_smplx_data_offline_fast
+            from video2robot.smpl_utils import load_smplx_file_robust
             
             self._GMR = GeneralMotionRetargeting
-            self._load_smplx_file = load_smplx_file
+            self._load_smplx_file = load_smplx_file_robust
             self._get_smplx_data_offline_fast = get_smplx_data_offline_fast
             self._initialized = True
             print(f"[RobotRetargeter] GMR initialized for {self.robot_type}")

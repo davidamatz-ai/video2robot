@@ -149,15 +149,15 @@ def main():
                 "fps": float(robot_motion["fps"]),
                 "robot_type": robot_motion["robot_type"],
                 "num_frames": int(robot_motion["num_frames"]),
-                "human_height": float(robot_motion["human_height"]),
-                "root_pos": robot_motion["root_pos"].tolist(),
-                "root_rot": robot_motion["root_rot"].tolist(),
-                "dof_pos": robot_motion["dof_pos"][:, keep_indices].tolist(),
-                "local_body_pos": robot_motion["local_body_pos"].tolist(),
-                "link_body_list": robot_motion["link_body_list"],
+                "human_height": float(robot_motion.get("human_height", 1.7)),
+                "root_pos": np.asarray(robot_motion["root_pos"]).tolist(),
+                "root_rot": np.asarray(robot_motion["root_rot"]).tolist(),
+                "dof_pos": np.asarray(robot_motion["dof_pos"])[:, keep_indices].tolist(),
+                "local_body_pos": np.asarray(robot_motion["local_body_pos"]).tolist(),
+                "link_body_list": robot_motion.get("link_body_list", []),
             }
 
-            dof_shape = robot_motion["dof_pos"][:, keep_indices].shape
+            dof_shape = np.asarray(robot_motion["dof_pos"])[:, keep_indices].shape
             with open(twist_output_path, "wb") as f:
                 pickle.dump(twist_motion, f, protocol=2)
 

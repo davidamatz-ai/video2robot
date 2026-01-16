@@ -48,13 +48,14 @@ def get_video_fps(video_path: Path) -> float:
         return 30.0  # fallback
 
 
-_PROMPTHMR_TO_GMR_COORD_TRANSFORM = np.array(
-    [
-        [0, 0, -1],  # X_gmr = -Z_phmr
-        [-1, 0, 0],  # Y_gmr = -X_phmr
-        [0, 1, 0],  # Z_gmr =  Y_phmr
-    ],
-    dtype=np.float32,
+# Transforms for different PromptHMR coordinate systems to GMR (Z-up, X-forward)
+# PromptHMR Camera (Y-up): X_gmr = -Z_cam, Y_gmr = -X_cam, Z_gmr = Y_cam
+_PROMPTHMR_CAM_TO_GMR = np.array(
+    [[0, 0, -1], [-1, 0, 0], [0, 1, 0]], dtype=np.float32
+)
+# PromptHMR World (Y-down): X_gmr = Z_world, Y_gmr = -X_world, Z_gmr = -Y_world
+_PROMPTHMR_WORLD_TO_GMR = np.array(
+    [[0, 0, 1], [-1, 0, 0], [0, -1, 0]], dtype=np.float32
 )
 
 
@@ -151,18 +152,50 @@ def convert_prompthmr_results_to_smplx_npz(
     person = people[resolved_track_key]
     print(f"[PoseExtractor] Using track #{resolved_index}: {resolved_track_key}")
 
-    smplx_world = person.get("smplx_world", {})
-    if not smplx_world:
-        raise ValueError("No world-coordinate SMPL-X data found")
+    # Try multiple keys for SMPL-X data
+    smplx_data_src = person.get("smplx_world")
+    is_world = True
+    if smplx_data_src is None:
+        smplx_data_src = person.get("smplx_cam") or person.get("smplx")
+        is_world = False
 
-    frames = person.get("frames", np.arange(len(smplx_world.get("pose", []))))
-    num_frames = int(len(frames))
+    if smplx_data_src is None:
+        raise ValueError("No SMPL-X data found in results.pkl for this track")
 
-    poses_flat = smplx_world.get("pose", np.zeros((num_frames, 165)))
-    shapes = smplx_world.get("shape", np.zeros((num_frames, 10)))
-    trans_yup = smplx_world.get("trans", np.zeros((num_frames, 3)))
+    frames = person.get("frames")
+    if frames is None:
+        # Fallback to number of frames in pose data
+        first_val = next(iter(smplx_data_src.values()))
+        num_frames = len(first_val)
+        frames = np.arange(num_frames)
+    else:
+        num_frames = int(len(frames))
 
-    poses = poses_flat.reshape(num_frames, 55, 3)
+    poses_flat = smplx_data_src.get("pose")
+    if poses_flat is None:
+        poses_flat = np.zeros((num_frames, 165))
+    else:
+        poses_flat = np.asarray(poses_flat)
+        # Ensure it is at least 165 dimensions (SMPL-X)
+        if poses_flat.shape[-1] < 165:
+            # Pad with zeros if it's SMPL (72)
+            padded = np.zeros((poses_flat.shape[0], 165))
+            padded[:, :poses_flat.shape[-1]] = poses_flat
+            poses_flat = padded
+
+    shapes = smplx_data_src.get("shape")
+    if shapes is None:
+        shapes = np.zeros((num_frames, 10))
+    else:
+        shapes = np.asarray(shapes)
+
+    trans_src = smplx_data_src.get("trans")
+    if trans_src is None:
+        trans_src = np.zeros((num_frames, 3))
+    else:
+        trans_src = np.asarray(trans_src).reshape(num_frames, 3)
+
+    poses = poses_flat.reshape(num_frames, -1, 3)[:, :55, :]
 
     # Get FPS from original video if provided, otherwise fallback
     if video_path is None:
@@ -175,15 +208,20 @@ def convert_prompthmr_results_to_smplx_npz(
         fps = float(results.get("fps", 30.0))
         print(f"[PoseExtractor] FPS from results.pkl (fallback): {fps}")
 
+    # Choose transform based on coordinate system
+    transform = _PROMPTHMR_WORLD_TO_GMR if is_world else _PROMPTHMR_CAM_TO_GMR
+    coord_type = "World (Y-down)" if is_world else "Camera (Y-up)"
+    print(f"[PoseExtractor] Coordinate system: {coord_type}")
+
     # Translation: (N,3)
-    trans_zup = trans_yup @ _PROMPTHMR_TO_GMR_COORD_TRANSFORM.T
+    trans_zup = trans_src @ transform.T
 
     # Root orientation: axis-angle (N,3)
-    root_orient_yup = poses[:, 0, :].reshape(num_frames, 3)
-    root_orient_zup = np.zeros_like(root_orient_yup)
+    root_orient_src = poses[:, 0, :].reshape(num_frames, 3)
+    root_orient_zup = np.zeros_like(root_orient_src)
     for i in range(num_frames):
-        rot_mat_yup = R.from_rotvec(root_orient_yup[i]).as_matrix()
-        rot_mat_zup = _PROMPTHMR_TO_GMR_COORD_TRANSFORM @ rot_mat_yup
+        rot_mat_src = R.from_rotvec(root_orient_src[i]).as_matrix()
+        rot_mat_zup = transform @ rot_mat_src
         root_orient_zup[i] = R.from_matrix(rot_mat_zup).as_rotvec()
 
     # Body pose: 21 joints (N,63)

@@ -70,7 +70,7 @@ class RobotRetargeter:
         try:
             from general_motion_retargeting import GeneralMotionRetargeting
             from general_motion_retargeting.utils.smpl import get_smplx_data_offline_fast
-            from video2robot.smpl_utils import load_smplx_file_robust
+            from video2robot.utils import load_smplx_file_robust
             
             self._GMR = GeneralMotionRetargeting
             self._load_smplx_file = load_smplx_file_robust

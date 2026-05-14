@@ -38,6 +38,11 @@ class RetargetRequest(BaseModel):
     all_tracks: bool = True
 
 
+class ExportCSVRequest(BaseModel):
+    """Request to export robot motion to CSV."""
+    project: str
+
+
 class RunPipelineRequest(BaseModel):
     """Request to run full pipeline."""
     project: Optional[str] = None
@@ -94,6 +99,29 @@ async def extract_pose(request: ExtractPoseRequest, background_tasks: Background
         static_camera=request.static_camera,
     )
     
+    return task.to_dict()
+
+
+@router.post("/export-csv")
+async def export_csv(request: ExportCSVRequest, background_tasks: BackgroundTasks):
+    """Start CSV export task."""
+    project_dir = DATA_DIR / request.project
+
+    if not project_dir.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check for robot motion data
+    has_robot = (project_dir / "robot_motion.pkl").exists()
+    if not has_robot:
+        raise HTTPException(status_code=400, detail="Robot motion data not found. Run retargeting first.")
+
+    task = task_manager.create_task(TaskType.EXPORT_CSV, request.project)
+
+    background_tasks.add_task(
+        task_manager.run_export_csv,
+        task,
+    )
+
     return task.to_dict()
 
 

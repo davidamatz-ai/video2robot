@@ -27,6 +27,7 @@ class TaskType(str, Enum):
     GENERATE_VIDEO = "generate_video"
     EXTRACT_POSE = "extract_pose"
     RETARGET = "retarget"
+    EXPORT_CSV = "export_csv"
 
 
 @dataclass
@@ -511,6 +512,72 @@ class TaskManager:
             task.completed_at = datetime.now()
             self._running_processes.pop(task.id, None)
     
+    async def run_export_csv(
+        self,
+        task: Task,
+        gmr_env: str = "gmr",
+    ):
+        """Run CSV export."""
+        task.status = TaskStatus.RUNNING
+        task.started_at = datetime.now()
+        task.message = "Exporting to CSV..."
+        self._enter_stage(
+            task,
+            name="Exporting",
+            index=0,
+            total=1,
+            min_progress=0.0,
+            max_progress=0.9,
+            expected_seconds=10,
+        )
+
+        try:
+            from video2robot.config import DATA_DIR
+            project_dir = DATA_DIR / task.project
+
+            script = PROJECT_ROOT / "scripts" / "batch_gmr_pkl_to_csv.py"
+            cmd = [
+                "conda", "run", "-n", gmr_env, "--no-capture-output",
+                "python", str(script),
+                "--folder", str(project_dir),
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(PROJECT_ROOT),
+            )
+            self._running_processes[task.id] = process
+
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                line_str = line.decode().strip()
+                if not line_str:
+                    continue
+                task.message = line_str[-100:]
+
+            await process.wait()
+
+            if process.returncode == 0:
+                task.status = TaskStatus.COMPLETED
+                task.progress = 1.0
+                task.message = "CSV export complete"
+                task.stage_name = "Complete"
+            else:
+                task.status = TaskStatus.FAILED
+                task.error = f"Exit code: {process.returncode}"
+
+        except Exception as e:
+            task.status = TaskStatus.FAILED
+            task.error = str(e)
+
+        finally:
+            task.completed_at = datetime.now()
+            self._running_processes.pop(task.id, None)
+
     async def run_retarget(
         self,
         task: Task,

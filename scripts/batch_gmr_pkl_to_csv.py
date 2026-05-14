@@ -17,9 +17,6 @@ if __name__ == "__main__":
         print(f"Error: {input_file} not found")
         sys.exit(1)
 
-    out_folder = os.path.join(args.folder, "csv")
-    os.makedirs(out_folder, exist_ok=True)
-
     with open(input_file, "rb") as f:
         motion_data = pickle.load(f)
 
@@ -39,7 +36,7 @@ if __name__ == "__main__":
         print(f"Downsampled from {old_length} to {motion.shape[0]} frames")
 
 
-    output_path = os.path.join(out_folder, "robot_motion.csv")
+    output_path = os.path.join(args.folder, "robot_motion.csv")
     np.savetxt(
         output_path,
         motion,

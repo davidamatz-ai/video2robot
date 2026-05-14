@@ -146,6 +146,7 @@ function renderProjectDetail(detail) {
     // Enable/disable buttons based on state
     document.getElementById('btn-extract-pose').disabled = !detail.has_video;
     document.getElementById('btn-retarget').disabled = !detail.has_pose;
+    document.getElementById('btn-export-csv').disabled = !detail.has_robot;
     document.getElementById('btn-visualize').disabled = !detail.has_robot;
 
     // Status badges in header
@@ -475,6 +476,7 @@ function getTaskTypeLabel(type) {
         'generate_video': 'Video Generation',
         'extract_pose': 'Pose Extraction',
         'retarget': 'Robot Retarget',
+        'export_csv': 'CSV Export',
     };
     return labels[type] || type;
 }
@@ -509,6 +511,20 @@ document.getElementById('btn-extract-pose').addEventListener('click', async () =
             static_camera: staticCamera,
         });
         enqueueTask(task, { nextStep: null, staticCamera });
+        startTaskPolling();
+        renderTaskStatus();
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    }
+});
+
+document.getElementById('btn-export-csv').addEventListener('click', async () => {
+    if (!currentProject) return;
+    try {
+        const task = await api('POST', '/pipeline/export-csv', {
+            project: currentProject,
+        });
+        enqueueTask(task, { nextStep: null });
         startTaskPolling();
         renderTaskStatus();
     } catch (e) {
